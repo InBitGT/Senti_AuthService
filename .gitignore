@@ -1,0 +1,7 @@
+# Variables de entorno
+.env
+
+#tmp
+runner-build.exe
+runner-build.exe~
+runner-build-errors.log
