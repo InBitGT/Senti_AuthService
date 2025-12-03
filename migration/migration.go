@@ -4,19 +4,24 @@ import (
 	"fmt"
 
 	"AuthService/db"
-	"AuthService/internal/modules/auth"
+	"AuthService/internal/modules/otp"
+	"AuthService/internal/modules/permission"
+	"AuthService/internal/modules/refreshtoken"
+	"AuthService/internal/modules/role"
+	"AuthService/internal/modules/tenant"
+	"AuthService/internal/modules/user"
 )
 
 func Migration() {
 	database := db.Database()
 	err := database.AutoMigrate(
-		&auth.Tenant{},
-		&auth.Role{},
-		&auth.Permission{},
-		&auth.RolePermission{},
-		&auth.User{},
-		&auth.RefreshToken{},
-		&auth.UserOTP{},
+		&tenant.Tenant{},
+		&role.Role{},
+		&permission.Permission{},
+		&permission.RolePermission{},
+		&user.User{},
+		&refreshtoken.RefreshToken{},
+		&otp.UserOTP{},
 	)
 	if err != nil {
 		panic(err)

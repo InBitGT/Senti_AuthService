@@ -4,7 +4,10 @@ import (
 	"errors"
 	"time"
 
-	"AuthService/internal/config" // ajusta el módulo: authService/internal/config
+	"AuthService/internal/config"
+
+	"AuthService/internal/modules/refreshtoken"
+	"AuthService/internal/modules/user"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -16,7 +19,7 @@ var (
 )
 
 type AuthService interface {
-	Register(req *RegisterRequest) (*User, error)
+	Register(req *RegisterRequest) (*user.User, error)
 	Login(req *LoginRequest) (*AuthResponse, error)
 	Refresh(refreshToken string) (*AuthResponse, error)
 }
@@ -29,7 +32,6 @@ func NewAuthService(repo AuthRepository) AuthService {
 	return &authService{repo}
 }
 
-// claims personalizados
 type AuthClaims struct {
 	UserID      uint     `json:"sub"`
 	TenantID    uint     `json:"tenant"`
@@ -38,13 +40,13 @@ type AuthClaims struct {
 	jwt.RegisteredClaims
 }
 
-func (s *authService) Register(req *RegisterRequest) (*User, error) {
-	tenant, err := s.repo.GetActiveTenantByCode(req.TenantCode)
+func (s *authService) Register(req *RegisterRequest) (*user.User, error) {
+	tenantObj, err := s.repo.GetActiveTenantByCode(req.TenantCode)
 	if err != nil {
 		return nil, err
 	}
 
-	role, err := s.repo.GetRoleByName(tenant.ID, req.RoleName)
+	roleObj, err := s.repo.GetRoleByName(tenantObj.ID, req.RoleName)
 	if err != nil {
 		return nil, err
 	}
@@ -54,28 +56,28 @@ func (s *authService) Register(req *RegisterRequest) (*User, error) {
 		return nil, err
 	}
 
-	user := &User{
-		TenantID:     tenant.ID,
+	u := &user.User{
+		TenantID:     tenantObj.ID,
 		Email:        req.Email,
 		PasswordHash: string(hash),
-		RoleID:       role.ID,
+		RoleID:       roleObj.ID,
 		IsActive:     true,
 	}
 
-	if err := s.repo.CreateUser(user); err != nil {
+	if err := s.repo.CreateUser(u); err != nil {
 		return nil, err
 	}
 
-	return user, nil
+	return u, nil
 }
 
 func (s *authService) Login(req *LoginRequest) (*AuthResponse, error) {
-	tenant, err := s.repo.GetActiveTenantByCode(req.TenantCode)
+	tenantObj, err := s.repo.GetActiveTenantByCode(req.TenantCode)
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}
 
-	u, err := s.repo.GetUserByEmail(tenant.ID, req.Email)
+	u, err := s.repo.GetUserByEmail(tenantObj.ID, req.Email)
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}
@@ -84,18 +86,20 @@ func (s *authService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, ErrInvalidCredentials
 	}
 
-	// si tiene 2FA habilitado, validamos OTP
+	// Si tiene 2FA habilitado
 	if u.TwoFAEnabled {
 		if req.OTP == "" {
 			return nil, ErrInvalidOTP
 		}
-		otp, err := s.repo.FindValidOTP(u.ID, u.TenantID, req.OTP, time.Now())
+
+		otpObj, err := s.repo.FindValidOTP(u.ID, u.TenantID, req.OTP, time.Now())
 		if err != nil {
 			return nil, ErrInvalidOTP
 		}
-		_ = s.repo.MarkOTPUsed(otp.ID)
+		_ = s.repo.MarkOTPUsed(otpObj.ID)
 	}
 
+	// cargar permisos
 	perms, err := s.repo.GetPermissionsByRole(u.RoleID)
 	if err != nil {
 		return nil, err
@@ -110,15 +114,14 @@ func (s *authService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, err
 	}
 
-	resp := &AuthResponse{
+	return &AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshTokenStr,
 		ExpiresIn:    int64(config.JwtExpiry.Seconds()),
-	}
-	return resp, nil
+	}, nil
 }
 
-func (s *authService) generateTokens(u *User, perms []string) (string, string, error) {
+func (s *authService) generateTokens(u *user.User, perms []string) (string, string, error) {
 	now := time.Now()
 
 	claims := AuthClaims{
@@ -138,32 +141,35 @@ func (s *authService) generateTokens(u *User, perms []string) (string, string, e
 		return "", "", err
 	}
 
-	refreshToken := &RefreshToken{
+	rt := &refreshtoken.RefreshToken{
 		UserID:    u.ID,
-		Token:     generateRandomToken(), // implementa un generador aleatorio
+		Token:     generateRandomToken(),
 		ExpiresAt: now.Add(config.RefreshTokenTTL),
 	}
-	if err := s.repo.SaveRefreshToken(refreshToken); err != nil {
+
+	if err := s.repo.SaveRefreshToken(rt); err != nil {
 		return "", "", err
 	}
 
-	return accessToken, refreshToken.Token, nil
+	return accessToken, rt.Token, nil
 }
 
-func (s *authService) Refresh(refreshTokenStr string) (*AuthResponse, error) {
-	rt, err := s.repo.GetRefreshToken(refreshTokenStr)
-	if err != nil || rt.ExpiresAt.Before(time.Now()) || rt.Revoked {
+func (s *authService) Refresh(token string) (*AuthResponse, error) {
+	rt, err := s.repo.GetRefreshToken(token)
+	if err != nil || rt.Revoked || rt.ExpiresAt.Before(time.Now()) {
 		return nil, ErrInvalidCredentials
 	}
 
-	// cargar usuario
-	u := &User{}
-	u.ID = rt.UserID
+	u, err := s.repo.GetUserByID(rt.UserID)
+	if err != nil {
+		return nil, ErrInvalidCredentials
+	}
 
 	perms, err := s.repo.GetPermissionsByRole(u.RoleID)
 	if err != nil {
 		return nil, err
 	}
+
 	permKeys := make([]string, len(perms))
 	for i, p := range perms {
 		permKeys[i] = p.Key

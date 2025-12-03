@@ -3,20 +3,32 @@ package auth
 import (
 	"time"
 
+	"AuthService/internal/modules/otp"
+	"AuthService/internal/modules/permission"
+	"AuthService/internal/modules/refreshtoken"
+	"AuthService/internal/modules/role"
+	"AuthService/internal/modules/tenant"
+	"AuthService/internal/modules/user"
+
 	"gorm.io/gorm"
 )
 
 type AuthRepository interface {
-	GetActiveTenantByCode(code string) (*Tenant, error)
-	GetRoleByName(tenantID uint, name string) (*Role, error)
-	CreateUser(user *User) error
-	GetUserByEmail(tenantID uint, email string) (*User, error)
-	GetPermissionsByRole(roleID uint) ([]Permission, error)
-	SaveRefreshToken(token *RefreshToken) error
-	GetRefreshToken(token string) (*RefreshToken, error)
+	GetActiveTenantByCode(code string) (*tenant.Tenant, error)
+	GetRoleByName(tenantID uint, name string) (*role.Role, error)
+
+	CreateUser(u *user.User) error
+	GetUserByID(id uint) (*user.User, error)
+	GetUserByEmail(tenantID uint, email string) (*user.User, error)
+
+	GetPermissionsByRole(roleID uint) ([]permission.Permission, error)
+
+	SaveRefreshToken(token *refreshtoken.RefreshToken) error
+	GetRefreshToken(token string) (*refreshtoken.RefreshToken, error)
 	RevokeRefreshToken(id uint) error
-	SaveOTP(otp *UserOTP) error
-	FindValidOTP(userID, tenantID uint, code string, now time.Time) (*UserOTP, error)
+
+	SaveOTP(o *otp.UserOTP) error
+	FindValidOTP(userID, tenantID uint, code string, now time.Time) (*otp.UserOTP, error)
 	MarkOTPUsed(id uint) error
 }
 
@@ -28,84 +40,74 @@ func NewAuthRepository(db *gorm.DB) AuthRepository {
 	return &authRepository{db}
 }
 
-func (r *authRepository) GetActiveTenantByCode(code string) (*Tenant, error) {
-	var t Tenant
-	err := r.db.Where("code = ? AND is_active = ?", code, true).First(&t).Error
-	if err != nil {
-		return nil, err
-	}
-	return &t, nil
+func (r *authRepository) GetActiveTenantByCode(code string) (*tenant.Tenant, error) {
+	var t tenant.Tenant
+	err := r.db.Where("code = ? AND is_active = true", code).First(&t).Error
+	return &t, err
 }
 
-func (r *authRepository) GetRoleByName(tenantID uint, name string) (*Role, error) {
-	var role Role
-	err := r.db.Where("id_tenant = ? AND name = ?", tenantID, name).First(&role).Error
-	if err != nil {
-		return nil, err
-	}
-	return &role, nil
+func (r *authRepository) GetRoleByName(tenantID uint, name string) (*role.Role, error) {
+	var rl role.Role
+	err := r.db.Where("tenant_id = ? AND name = ?", tenantID, name).First(&rl).Error
+	return &rl, err
 }
 
-func (r *authRepository) CreateUser(u *User) error {
+func (r *authRepository) CreateUser(u *user.User) error {
 	return r.db.Create(u).Error
 }
 
-func (r *authRepository) GetUserByEmail(tenantID uint, email string) (*User, error) {
-	var u User
-	err := r.db.Where("id_tenant = ? AND email = ? AND is_active = ?", tenantID, email, true).First(&u).Error
-	if err != nil {
-		return nil, err
-	}
-	return &u, nil
+func (r *authRepository) GetUserByID(id uint) (*user.User, error) {
+	var u user.User
+	err := r.db.First(&u, id).Error
+	return &u, err
 }
 
-func (r *authRepository) GetPermissionsByRole(roleID uint) ([]Permission, error) {
-	var perms []Permission
-	err := r.db.
-		Table("permissions p").
-		Joins("INNER JOIN role_permissions rp ON rp.id_permission = p.id_permission").
-		Where("rp.id_role = ?", roleID).
+func (r *authRepository) GetUserByEmail(tenantID uint, email string) (*user.User, error) {
+	var u user.User
+	err := r.db.Where("tenant_id = ? AND email = ? AND is_active = true", tenantID, email).First(&u).Error
+	return &u, err
+}
+
+func (r *authRepository) GetPermissionsByRole(roleID uint) ([]permission.Permission, error) {
+	var perms []permission.Permission
+	err := r.db.Table("permissions p").
+		Joins("JOIN role_permissions rp ON rp.permission_id = p.id_permission").
+		Where("rp.role_id = ?", roleID).
 		Find(&perms).Error
 	return perms, err
 }
 
-func (r *authRepository) SaveRefreshToken(t *RefreshToken) error {
-	return r.db.Create(t).Error
+func (r *authRepository) SaveRefreshToken(rt *refreshtoken.RefreshToken) error {
+	return r.db.Create(rt).Error
 }
 
-func (r *authRepository) GetRefreshToken(token string) (*RefreshToken, error) {
-	var rt RefreshToken
-	err := r.db.Where("token = ? AND revoked = ?", token, false).First(&rt).Error
-	if err != nil {
-		return nil, err
-	}
-	return &rt, nil
+func (r *authRepository) GetRefreshToken(token string) (*refreshtoken.RefreshToken, error) {
+	var rt refreshtoken.RefreshToken
+	err := r.db.Where("token = ? AND revoked = false", token).First(&rt).Error
+	return &rt, err
 }
 
 func (r *authRepository) RevokeRefreshToken(id uint) error {
-	return r.db.Model(&RefreshToken{}).
+	return r.db.Model(&refreshtoken.RefreshToken{}).
 		Where("id_refresh_token = ?", id).
 		Update("revoked", true).Error
 }
 
-func (r *authRepository) SaveOTP(o *UserOTP) error {
+func (r *authRepository) SaveOTP(o *otp.UserOTP) error {
 	return r.db.Create(o).Error
 }
 
-func (r *authRepository) FindValidOTP(userID, tenantID uint, code string, now time.Time) (*UserOTP, error) {
-	var otp UserOTP
-	err := r.db.Where(
-		"id_user = ? AND id_tenant = ? AND code = ? AND used = ? AND expires_at >= ?",
-		userID, tenantID, code, false, now,
-	).First(&otp).Error
-	if err != nil {
-		return nil, err
-	}
-	return &otp, nil
+func (r *authRepository) FindValidOTP(userID, tenantID uint, code string, now time.Time) (*otp.UserOTP, error) {
+	var out otp.UserOTP
+	err := r.db.Where(`
+		user_id = ? AND tenant_id = ? AND code = ? AND used = false AND expires_at >= ?`,
+		userID, tenantID, code, now,
+	).First(&out).Error
+	return &out, err
 }
 
 func (r *authRepository) MarkOTPUsed(id uint) error {
-	return r.db.Model(&UserOTP{}).
+	return r.db.Model(&otp.UserOTP{}).
 		Where("id_otp = ?", id).
 		Update("used", true).Error
 }
