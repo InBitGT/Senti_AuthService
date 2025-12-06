@@ -70,10 +70,12 @@ func (r *authRepository) GetUserByEmail(tenantID uint, email string) (*user.User
 
 func (r *authRepository) GetPermissionsByRole(roleID uint) ([]permission.Permission, error) {
 	var perms []permission.Permission
+
 	err := r.db.Table("permissions p").
-		Joins("JOIN role_permissions rp ON rp.permission_id = p.id_permission").
-		Where("rp.role_id = ?", roleID).
+		Joins("JOIN role_permissions rp ON rp.id_permission = p.id_permission").
+		Where("rp.id_role = ?", roleID).
 		Find(&perms).Error
+
 	return perms, err
 }
 
