@@ -2,6 +2,7 @@ package server
 
 import (
 	"AuthService/internal/modules/auth"
+	"AuthService/internal/modules/role"
 
 	"github.com/gorilla/mux"
 	"gorm.io/gorm"
@@ -14,4 +15,5 @@ type Server struct {
 
 type Handlers struct {
 	Auth *auth.AuthHandler
+	Role *role.RoleHandler
 }
