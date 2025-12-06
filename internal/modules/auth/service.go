@@ -2,10 +2,12 @@ package auth
 
 import (
 	"errors"
+	"fmt"
+	"math/rand"
 	"time"
 
 	"AuthService/internal/config"
-
+	"AuthService/internal/modules/otp"
 	"AuthService/internal/modules/refreshtoken"
 	"AuthService/internal/modules/user"
 
@@ -21,7 +23,10 @@ var (
 type AuthService interface {
 	Register(req *RegisterRequest) (*user.User, error)
 	Login(req *LoginRequest) (*AuthResponse, error)
-	Refresh(refreshToken string) (*AuthResponse, error)
+	Refresh(token string) (*AuthResponse, error)
+
+	GenerateOTP(tenantCode, email, channel string) (*otp.UserOTP, error)
+	ToggleTwoFA(userID uint, enabled bool) error
 }
 
 type authService struct {
@@ -86,7 +91,6 @@ func (s *authService) Login(req *LoginRequest) (*AuthResponse, error) {
 		return nil, ErrInvalidCredentials
 	}
 
-	// Si tiene 2FA habilitado
 	if u.TwoFAEnabled {
 		if req.OTP == "" {
 			return nil, ErrInvalidOTP
@@ -99,11 +103,11 @@ func (s *authService) Login(req *LoginRequest) (*AuthResponse, error) {
 		_ = s.repo.MarkOTPUsed(otpObj.ID)
 	}
 
-	// cargar permisos
 	perms, err := s.repo.GetPermissionsByRole(u.RoleID)
 	if err != nil {
 		return nil, err
 	}
+
 	permKeys := make([]string, len(perms))
 	for i, p := range perms {
 		permKeys[i] = p.Key
@@ -127,7 +131,6 @@ func (s *authService) generateTokens(u *user.User, perms []string) (string, stri
 	claims := AuthClaims{
 		UserID:      u.ID,
 		TenantID:    u.TenantID,
-		Role:        "",
 		Permissions: perms,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(config.JwtExpiry)),
@@ -187,4 +190,49 @@ func (s *authService) Refresh(token string) (*AuthResponse, error) {
 		RefreshToken: newRefresh,
 		ExpiresIn:    int64(config.JwtExpiry.Seconds()),
 	}, nil
+}
+
+/* OTP */
+
+func generateOTP() string {
+	n := rand.Intn(899999) + 100000
+	return fmt.Sprintf("%06d", n)
+}
+
+func (s *authService) GenerateOTP(tenantCode, email, channel string) (*otp.UserOTP, error) {
+	t, err := s.repo.GetActiveTenantByCode(tenantCode)
+	if err != nil {
+		return nil, errors.New("tenant inválido")
+	}
+
+	u, err := s.repo.GetUserByEmail(t.ID, email)
+	if err != nil {
+		return nil, errors.New("usuario no encontrado")
+	}
+
+	code := generateOTP()
+
+	o := &otp.UserOTP{
+		UserID:    u.ID,
+		TenantID:  t.ID,
+		Code:      code,
+		Channel:   channel,
+		ExpiresAt: time.Now().Add(5 * time.Minute),
+	}
+
+	if err := s.repo.SaveOTP(o); err != nil {
+		return nil, err
+	}
+
+	return o, nil
+}
+
+func (s *authService) ToggleTwoFA(userID uint, enabled bool) error {
+	u, err := s.repo.GetUserByID(userID)
+	if err != nil {
+		return err
+	}
+
+	u.TwoFAEnabled = enabled
+	return s.repo.UpdateUser(u)
 }

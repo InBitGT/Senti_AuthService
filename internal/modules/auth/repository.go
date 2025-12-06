@@ -18,6 +18,7 @@ type AuthRepository interface {
 	GetRoleByName(tenantID uint, name string) (*role.Role, error)
 
 	CreateUser(u *user.User) error
+	UpdateUser(u *user.User) error
 	GetUserByID(id uint) (*user.User, error)
 	GetUserByEmail(tenantID uint, email string) (*user.User, error)
 
@@ -54,6 +55,10 @@ func (r *authRepository) GetRoleByName(tenantID uint, name string) (*role.Role, 
 
 func (r *authRepository) CreateUser(u *user.User) error {
 	return r.db.Create(u).Error
+}
+
+func (r *authRepository) UpdateUser(u *user.User) error {
+	return r.db.Save(u).Error
 }
 
 func (r *authRepository) GetUserByID(id uint) (*user.User, error) {
