@@ -3,6 +3,7 @@ package routes
 import (
 	"AuthService/internal/middleware"
 	"AuthService/internal/modules/auth"
+	"AuthService/internal/modules/permission"
 	"AuthService/internal/modules/role"
 
 	"github.com/gorilla/mux"
@@ -11,6 +12,7 @@ import (
 type RouteHandlers interface {
 	GetAuthHandler() *auth.AuthHandler
 	GetRoleHandler() *role.RoleHandler
+	GetPermissionHandler() *permission.PermissionHandler
 }
 
 func SetupRoutes(router *mux.Router, handlers RouteHandlers) {
@@ -25,4 +27,7 @@ func SetupRoutes(router *mux.Router, handlers RouteHandlers) {
 
 	// Role routes
 	role.SetUpRoleRoutes(api, handlers.GetRoleHandler())
+
+	// Permission routes
+	permission.SetUpPermissionRoutes(api, handlers.GetPermissionHandler())
 }

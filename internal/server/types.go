@@ -2,6 +2,7 @@ package server
 
 import (
 	"AuthService/internal/modules/auth"
+	"AuthService/internal/modules/permission"
 	"AuthService/internal/modules/role"
 
 	"github.com/gorilla/mux"
@@ -14,6 +15,7 @@ type Server struct {
 }
 
 type Handlers struct {
-	Auth *auth.AuthHandler
-	Role *role.RoleHandler
+	Auth       *auth.AuthHandler
+	Role       *role.RoleHandler
+	Permission *permission.PermissionHandler
 }
