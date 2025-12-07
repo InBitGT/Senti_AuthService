@@ -5,6 +5,7 @@ import (
 	"AuthService/internal/modules/auth"
 	"AuthService/internal/modules/permission"
 	"AuthService/internal/modules/role"
+	"AuthService/internal/modules/tenant"
 )
 
 func (s *Server) initializeHandlers() *Handlers {
@@ -23,11 +24,17 @@ func (s *Server) initializeHandlers() *Handlers {
 	permissionService := permission.NewPermissionService(permissionRepo)
 	permissionHandler := permission.NewPermissionHandler(permissionService)
 
+	// TENANTS
+	tenantRepo := tenant.NewTenantRepository(s.DB)
+	tenantService := tenant.NewTenantService(tenantRepo)
+	tenantHandler := tenant.NewTenantHandler(tenantService)
+
 	_ = config.JwtSecret
 
 	return &Handlers{
 		Auth:       authHandler,
 		Role:       roleHandler,
 		Permission: permissionHandler,
+		Tenant:     tenantHandler,
 	}
 }
