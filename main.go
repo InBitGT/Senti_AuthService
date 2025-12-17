@@ -10,7 +10,6 @@ import (
 	"AuthService/db"
 	"AuthService/internal/config"
 	"AuthService/internal/server"
-	"AuthService/migration"
 
 	"github.com/joho/godotenv"
 )
@@ -20,7 +19,7 @@ func main() {
 
 	database := db.Database()
 
-	migration.Migration()
+	//migration.Migration()
 
 	srv := server.NewServer(database)
 

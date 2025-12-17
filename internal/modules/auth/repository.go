@@ -31,6 +31,11 @@ type AuthRepository interface {
 	SaveOTP(o *otp.UserOTP) error
 	FindValidOTP(userID, tenantID uint, code string, now time.Time) (*otp.UserOTP, error)
 	MarkOTPUsed(id uint) error
+
+	CreateTenant(t *tenant.Tenant) error
+	HardDeleteTenant(id uint) error
+
+	CreateRole(r *role.Role) error
 }
 
 type authRepository struct {
@@ -117,4 +122,16 @@ func (r *authRepository) MarkOTPUsed(id uint) error {
 	return r.db.Model(&otp.UserOTP{}).
 		Where("id_otp = ?", id).
 		Update("used", true).Error
+}
+
+func (r *authRepository) CreateTenant(t *tenant.Tenant) error {
+	return r.db.Create(t).Error
+}
+
+func (r *authRepository) HardDeleteTenant(id uint) error {
+	return r.db.Unscoped().Where("id_tenant = ?", id).Delete(&tenant.Tenant{}).Error
+}
+
+func (r *authRepository) CreateRole(rle *role.Role) error {
+	return r.db.Create(rle).Error
 }

@@ -27,6 +27,7 @@ type AuthService interface {
 
 	GenerateOTP(tenantCode, email, channel string) (*otp.UserOTP, error)
 	ToggleTwoFA(userID uint, enabled bool) error
+	RegisterCompany(req *RegisterCompanyRequest) (*RegisterCompanyResponse, error)
 }
 
 type authService struct {
