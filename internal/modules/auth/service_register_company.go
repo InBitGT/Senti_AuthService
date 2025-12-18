@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"log"
 
 	"AuthService/internal/clients"
 	"AuthService/internal/modules/role"
@@ -11,14 +12,24 @@ import (
 var ErrRegisterCompany = errors.New("no se pudo registrar la empresa")
 
 func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCompanyResponse, error) {
+	log.Println("[REGISTER_COMPANY] start")
+
 	senti := clients.NewSentiClient()
 	userc := clients.NewUserClient()
 
-	if req.Tenant.Code == "" || req.Tenant.Name == "" || req.AdminUser.Email == "" || req.AdminUser.Password == "" {
+	// -------- VALIDACIÓN INICIAL --------
+	if req.Tenant.Code == "" || req.Tenant.Name == "" {
+		log.Println("[REGISTER_COMPANY] tenant inválido")
+		return nil, ErrRegisterCompany
+	}
+	if req.AdminUser.Email == "" || req.AdminUser.Password == "" {
+		log.Println("[REGISTER_COMPANY] admin user inválido")
 		return nil, ErrRegisterCompany
 	}
 
-	// 1) Crear una sola address (compartida)
+	// -------- 1) ADDRESS --------
+	log.Println("[REGISTER_COMPANY] creando address")
+
 	addressID, err := senti.CreateAddress(clients.CreateAddressReq{
 		Line1:      req.Address.Line1,
 		Line2:      req.Address.Line2,
@@ -28,16 +39,13 @@ func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCom
 		PostalCode: req.Address.PostalCode,
 	})
 	if err != nil {
+		log.Printf("[REGISTER_COMPANY] ERROR creando address: %v\n", err)
 		return nil, err
 	}
 
-	var tenantID uint
-	defer func() {
-		// Si algo falla después, esto evita basura.
-		// Se activa solo si devolvemos error y ya habíamos creado cosas.
-	}()
+	log.Printf("[REGISTER_COMPANY] address creado id=%d\n", addressID)
 
-	// 2) Crear tenant en AuthService
+	// -------- 2) TENANT --------
 	t := &tenant.Tenant{
 		Code:      req.Tenant.Code,
 		Name:      req.Tenant.Name,
@@ -48,13 +56,20 @@ func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCom
 		IsActive:  true,
 	}
 
+	log.Println("[REGISTER_COMPANY] creando tenant")
+
 	if err := s.repo.CreateTenant(t); err != nil {
+		log.Printf("[REGISTER_COMPANY] ERROR creando tenant: %v\n", err)
 		_ = senti.DeleteAddress(addressID)
 		return nil, err
 	}
-	tenantID = t.ID
 
-	// 3) Crear roles base del tenant
+	tenantID := t.ID
+	log.Printf("[REGISTER_COMPANY] tenant creado id=%d\n", tenantID)
+
+	// -------- 3) ROLES --------
+	log.Println("[REGISTER_COMPANY] creando rol ADMIN")
+
 	adminRole := &role.Role{
 		TenantID: tenantID,
 		Name:     role.AdminName,
@@ -62,10 +77,15 @@ func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCom
 	}
 
 	if err := s.repo.CreateRole(adminRole); err != nil {
+		log.Printf("[REGISTER_COMPANY] ERROR creando rol ADMIN: %v\n", err)
 		_ = s.repo.HardDeleteTenant(tenantID)
 		_ = senti.DeleteAddress(addressID)
 		return nil, err
 	}
+
+	log.Printf("[REGISTER_COMPANY] rol ADMIN creado id=%d\n", adminRole.ID)
+
+	log.Println("[REGISTER_COMPANY] creando rol USER")
 
 	userRole := &role.Role{
 		TenantID: tenantID,
@@ -74,12 +94,15 @@ func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCom
 	}
 
 	if err := s.repo.CreateRole(userRole); err != nil {
+		log.Printf("[REGISTER_COMPANY] ERROR creando rol USER: %v\n", err)
 		_ = s.repo.HardDeleteTenant(tenantID)
 		_ = senti.DeleteAddress(addressID)
 		return nil, err
 	}
 
-	// 4) Crear usuario admin en UserService (misma address)
+	// -------- 4) USER ADMIN --------
+	log.Println("[REGISTER_COMPANY] creando usuario admin en UserService")
+
 	userID, err := userc.CreateAdmin(clients.CreateAdminReq{
 		TenantID:  tenantID,
 		AddressID: addressID,
@@ -91,10 +114,15 @@ func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCom
 		RoleID:    adminRole.ID,
 	})
 	if err != nil {
+		log.Printf("[REGISTER_COMPANY] ERROR creando usuario admin: %v\n", err)
 		_ = s.repo.HardDeleteTenant(tenantID)
 		_ = senti.DeleteAddress(addressID)
 		return nil, err
 	}
+
+	log.Printf("[REGISTER_COMPANY] usuario admin creado id=%d\n", userID)
+
+	log.Println("[REGISTER_COMPANY] SUCCESS")
 
 	return &RegisterCompanyResponse{
 		TenantID:  tenantID,
