@@ -46,9 +46,11 @@ func NewAuthRepository(db *gorm.DB) AuthRepository {
 	return &authRepository{db}
 }
 
+// ✅ antes: code + is_active=true
+// ✅ ahora: code + status=true (nuevo schema)
 func (r *authRepository) GetActiveTenantByCode(code string) (*tenant.Tenant, error) {
 	var t tenant.Tenant
-	err := r.db.Where("code = ? AND is_active = true", code).First(&t).Error
+	err := r.db.Where("code = ? AND status = true", code).First(&t).Error
 	return &t, err
 }
 
@@ -74,6 +76,8 @@ func (r *authRepository) GetUserByID(id uint) (*user.User, error) {
 
 func (r *authRepository) GetUserByEmail(tenantID uint, email string) (*user.User, error) {
 	var u user.User
+	// NOTA: aquí todavía filtra is_active=true (tu user model aún lo tiene).
+	// Cuando alinees user al nuevo schema (status bool), lo cambiamos.
 	err := r.db.Where("tenant_id = ? AND email = ? AND is_active = true", tenantID, email).First(&u).Error
 	return &u, err
 }

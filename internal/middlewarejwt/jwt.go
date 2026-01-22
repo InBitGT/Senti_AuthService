@@ -1,4 +1,4 @@
-package middleware
+package middlewarejwt
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 
 	"AuthService/internal/common"
 	"AuthService/internal/config"
-	"AuthService/internal/modules/auth"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -21,6 +20,14 @@ const (
 	ContextPermsKey    contextKey = "permissions"
 )
 
+type AuthClaims struct {
+	UserID      uint     `json:"sub"`
+	TenantID    uint     `json:"tenant"`
+	Role        string   `json:"role"`
+	Permissions []string `json:"permissions"`
+	jwt.RegisteredClaims
+}
+
 func JWTMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -31,7 +38,7 @@ func JWTMiddleware(next http.Handler) http.Handler {
 
 		tokenString := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 
-		claims := &auth.AuthClaims{}
+		claims := &AuthClaims{}
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
 			return config.JwtSecret, nil
 		})

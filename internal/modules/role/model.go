@@ -7,6 +7,7 @@ type Role struct {
 	TenantID  uint       `json:"tenant_id" gorm:"not null"`
 	Name      string     `json:"name" gorm:"type:varchar(50);not null"`
 	Desc      string     `json:"description" gorm:"type:text"`
+	Status    string     `json:"status" gorm:"type:varchar(20);not null;default:'active'"`
 	CreatedAt *time.Time `json:"created_at,omitempty" gorm:"autoCreateTime"`
 	UpdatedAt *time.Time `json:"updated_at,omitempty" gorm:"autoUpdateTime"`
 }
