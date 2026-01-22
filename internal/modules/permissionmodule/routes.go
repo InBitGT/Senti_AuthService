@@ -1,4 +1,4 @@
-package permission
+package permissionmodule
 
 import (
 	"AuthService/internal/middleware"
@@ -6,8 +6,8 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func SetUpPermissionRoutes(api *mux.Router, h *PermissionHandler) {
-	r := api.PathPrefix("/permissions").Subrouter()
+func SetUpPermissionModuleRoutes(api *mux.Router, h *Handler) {
+	r := api.PathPrefix("/permission-modules").Subrouter()
 
 	// interno hard delete
 	internal := r.PathPrefix("/internal").Subrouter()
@@ -18,6 +18,5 @@ func SetUpPermissionRoutes(api *mux.Router, h *PermissionHandler) {
 	r.HandleFunc("", h.Create).Methods("POST")
 	r.HandleFunc("", h.GetAll).Methods("GET")
 	r.HandleFunc("/{id}", h.GetByID).Methods("GET")
-	r.HandleFunc("/{id}", h.Update).Methods("PUT")
-	r.HandleFunc("/{id}", h.Delete).Methods("DELETE") // status=false
+	r.HandleFunc("/{id}", h.Delete).Methods("DELETE")
 }

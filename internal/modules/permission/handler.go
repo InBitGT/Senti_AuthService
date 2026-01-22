@@ -10,7 +10,7 @@ import (
 )
 
 type PermissionHandler struct {
-	svc PermissionService
+	service PermissionService
 }
 
 func NewPermissionHandler(s PermissionService) *PermissionHandler {
@@ -18,55 +18,39 @@ func NewPermissionHandler(s PermissionService) *PermissionHandler {
 }
 
 func (h *PermissionHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req Permission
+	var req CreatePermissionDTO
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		common.ErrorResponse(w, http.StatusBadRequest, common.ERR_INVALID_JSON, "Invalid JSON", nil)
+		common.ErrorResponse(w, http.StatusBadRequest, common.HTTP_BAD_REQUEST, common.ERR_INVALID_JSON, nil)
 		return
 	}
 
-	out, err := h.svc.Create(&req)
+	out, err := h.service.Create(req)
 	if err != nil {
-		common.ErrorResponse(w, http.StatusInternalServerError, common.ERR_INTERNAL_ERROR, err.Error(), nil)
+		common.ErrorResponse(w, http.StatusInternalServerError, common.HTTP_SERVER_ERROR, common.ERR_INTERNAL_ERROR, nil)
 		return
 	}
 
 	common.CreatedResponse(w, common.SUCCESS_CREATED, out, common.HTTP_CREATED)
 }
 
-func (h *PermissionHandler) GetAll(w http.ResponseWriter, r *http.Request) {
-	out, err := h.svc.GetAll()
-	if err != nil {
-		common.ErrorResponse(w, http.StatusInternalServerError, common.ERR_INTERNAL_ERROR, err.Error(), nil)
-		return
-	}
-
-	common.SuccessResponse(w, common.SUCCESS_RETRIEVED, out, common.HTTP_OK)
-}
-
-func (h *PermissionHandler) GetByID(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(mux.Vars(r)["id"])
-
-	out, err := h.svc.GetByID(uint(id))
-	if err != nil {
-		common.ErrorResponse(w, http.StatusNotFound, common.ERR_NOT_FOUND, "Permission not found", nil)
-		return
-	}
-
-	common.SuccessResponse(w, common.SUCCESS_RETRIEVED, out, common.HTTP_OK)
-}
-
 func (h *PermissionHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(mux.Vars(r)["id"])
-
-	var req Permission
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		common.ErrorResponse(w, http.StatusBadRequest, common.ERR_INVALID_JSON, "Invalid JSON", nil)
+	idStr := mux.Vars(r)["id"]
+	id64, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		common.ErrorResponse(w, http.StatusBadRequest, common.HTTP_BAD_REQUEST, common.ERR_VALIDATION, nil)
 		return
 	}
 
-	out, err := h.svc.Update(uint(id), &req)
+	var req UpdatePermissionDTO
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		common.ErrorResponse(w, http.StatusBadRequest, common.HTTP_BAD_REQUEST, common.ERR_INVALID_JSON, nil)
+		return
+	}
+
+	out, err := h.service.Update(uint(id64), req)
 	if err != nil {
-		common.ErrorResponse(w, http.StatusInternalServerError, common.ERR_INTERNAL_ERROR, err.Error(), nil)
+		msg := err.Error()
+		common.ErrorResponse(w, http.StatusNotFound, common.HTTP_NOT_FOUND, msg, &msg)
 		return
 	}
 
@@ -74,36 +58,65 @@ func (h *PermissionHandler) Update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PermissionHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(mux.Vars(r)["id"])
-
-	if err := h.svc.Delete(uint(id)); err != nil {
-		common.ErrorResponse(w, http.StatusInternalServerError, common.ERR_INTERNAL_ERROR, err.Error(), nil)
-		return
-	}
-
-	common.SuccessResponse(w, common.SUCCESS_DELETED, nil, common.HTTP_OK)
-}
-
-func (h *PermissionHandler) AssignRolePermission(w http.ResponseWriter, r *http.Request) {
-	roleID, _ := strconv.Atoi(mux.Vars(r)["role_id"])
-	permID, _ := strconv.Atoi(mux.Vars(r)["permission_id"])
-
-	rp, err := h.svc.AssignRolePermission(uint(roleID), uint(permID))
+	idStr := mux.Vars(r)["id"]
+	id64, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
-		common.ErrorResponse(w, http.StatusInternalServerError, common.ERR_INTERNAL_ERROR, err.Error(), nil)
+		common.ErrorResponse(w, http.StatusBadRequest, common.HTTP_BAD_REQUEST, common.ERR_VALIDATION, nil)
 		return
 	}
 
-	common.CreatedResponse(w, common.SUCCESS_CREATED, rp, common.HTTP_CREATED)
-}
-
-func (h *PermissionHandler) RemoveRolePermission(w http.ResponseWriter, r *http.Request) {
-	id, _ := strconv.Atoi(mux.Vars(r)["id"])
-
-	if err := h.svc.RemoveAssignment(uint(id)); err != nil {
-		common.ErrorResponse(w, http.StatusInternalServerError, common.ERR_INTERNAL_ERROR, err.Error(), nil)
+	if err := h.service.Delete(uint(id64)); err != nil {
+		msg := err.Error()
+		common.ErrorResponse(w, http.StatusNotFound, common.HTTP_NOT_FOUND, msg, &msg)
 		return
 	}
 
 	common.SuccessResponse(w, common.SUCCESS_DELETED, nil, common.HTTP_OK)
+}
+
+func (h *PermissionHandler) GetByID(w http.ResponseWriter, r *http.Request) {
+	idStr := mux.Vars(r)["id"]
+	id64, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		common.ErrorResponse(w, http.StatusBadRequest, common.HTTP_BAD_REQUEST, common.ERR_VALIDATION, nil)
+		return
+	}
+
+	out, err := h.service.GetByID(uint(id64))
+	if err != nil {
+		msg := err.Error()
+		common.ErrorResponse(w, http.StatusNotFound, common.HTTP_NOT_FOUND, msg, &msg)
+		return
+	}
+
+	common.SuccessResponse(w, common.SUCCESS_RETRIEVED, out, common.HTTP_OK)
+}
+
+func (h *PermissionHandler) GetAll(w http.ResponseWriter, r *http.Request) {
+	out, err := h.service.GetAll()
+	if err != nil {
+		msg := err.Error()
+		common.ErrorResponse(w, http.StatusInternalServerError, common.HTTP_SERVER_ERROR, msg, &msg)
+		return
+	}
+
+	common.SuccessResponse(w, common.SUCCESS_RETRIEVED, out, common.HTTP_OK)
+}
+
+// hard delete interno
+func (h *PermissionHandler) HardDeleteInternal(w http.ResponseWriter, r *http.Request) {
+	idStr := mux.Vars(r)["id"]
+	id64, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		common.ErrorResponse(w, http.StatusBadRequest, common.HTTP_BAD_REQUEST, common.ERR_VALIDATION, nil)
+		return
+	}
+
+	if err := h.service.HardDelete(uint(id64)); err != nil {
+		msg := err.Error()
+		common.ErrorResponse(w, http.StatusInternalServerError, common.HTTP_SERVER_ERROR, msg, &msg)
+		return
+	}
+
+	common.SuccessResponse(w, common.SUCCESS_DELETED, "ok", common.HTTP_OK)
 }

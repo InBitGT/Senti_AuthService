@@ -1,14 +1,12 @@
 package permission
 
 type PermissionService interface {
-	Create(req *Permission) (*Permission, error)
-	Update(id uint, req *Permission) (*Permission, error)
+	Create(dto CreatePermissionDTO) (*Permission, error)
+	Update(id uint, dto UpdatePermissionDTO) (*Permission, error)
 	Delete(id uint) error
+	HardDelete(id uint) error
 	GetByID(id uint) (*Permission, error)
 	GetAll() ([]Permission, error)
-
-	AssignRolePermission(roleID uint, permID uint) (*RolePermission, error)
-	RemoveAssignment(id uint) error
 }
 
 type permissionService struct {
@@ -19,20 +17,43 @@ func NewPermissionService(repo PermissionRepository) PermissionService {
 	return &permissionService{repo}
 }
 
-func (s *permissionService) Create(req *Permission) (*Permission, error) {
-	p := &Permission{
-		Key:  req.Key,
-		Desc: req.Desc,
-	}
-	return p, s.repo.Create(p)
+type CreatePermissionDTO struct {
+	Key  string `json:"key"`
+	Desc string `json:"description"`
 }
 
-func (s *permissionService) Update(id uint, req *Permission) (*Permission, error) {
-	return s.repo.Update(id, req)
+type UpdatePermissionDTO struct {
+	Key  string `json:"key"`
+	Desc string `json:"description"`
+}
+
+func (s *permissionService) Create(dto CreatePermissionDTO) (*Permission, error) {
+	p := &Permission{
+		Key:    dto.Key,
+		Desc:   dto.Desc,
+		Status: true,
+	}
+
+	if err := s.repo.Create(p); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (s *permissionService) Update(id uint, dto UpdatePermissionDTO) (*Permission, error) {
+	p := &Permission{
+		Key:  dto.Key,
+		Desc: dto.Desc,
+	}
+	return s.repo.Update(id, p)
 }
 
 func (s *permissionService) Delete(id uint) error {
 	return s.repo.Delete(id)
+}
+
+func (s *permissionService) HardDelete(id uint) error {
+	return s.repo.HardDelete(id)
 }
 
 func (s *permissionService) GetByID(id uint) (*Permission, error) {
@@ -41,16 +62,4 @@ func (s *permissionService) GetByID(id uint) (*Permission, error) {
 
 func (s *permissionService) GetAll() ([]Permission, error) {
 	return s.repo.GetAll()
-}
-
-func (s *permissionService) AssignRolePermission(roleID uint, permID uint) (*RolePermission, error) {
-	rp := &RolePermission{
-		RoleID:       roleID,
-		PermissionID: permID,
-	}
-	return rp, s.repo.Assign(rp)
-}
-
-func (s *permissionService) RemoveAssignment(id uint) error {
-	return s.repo.RemoveAssignment(id)
 }

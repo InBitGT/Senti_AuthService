@@ -4,7 +4,9 @@ import (
 	"AuthService/internal/middleware"
 	"AuthService/internal/modules/auth"
 	"AuthService/internal/modules/permission"
+	"AuthService/internal/modules/permissionmodule"
 	"AuthService/internal/modules/role"
+	"AuthService/internal/modules/rolepermissionmodule"
 	"AuthService/internal/modules/tenant"
 
 	"github.com/gorilla/mux"
@@ -14,7 +16,9 @@ type RouteHandlers interface {
 	GetAuthHandler() *auth.AuthHandler
 	GetRoleHandler() *role.RoleHandler
 	GetPermissionHandler() *permission.PermissionHandler
+	GetPermissionModuleHandler() *permissionmodule.Handler
 	GetTenantHandler() *tenant.TenantHandler
+	GetRolePermissionModuleHandler() *rolepermissionmodule.Handler
 }
 
 func SetupRoutes(router *mux.Router, handlers RouteHandlers) {
@@ -24,15 +28,11 @@ func SetupRoutes(router *mux.Router, handlers RouteHandlers) {
 
 	api := router.PathPrefix("/api").Subrouter()
 
-	// Auth routes
 	auth.SetUpAuthRoutes(api, handlers.GetAuthHandler())
-
-	// Role routes
 	role.SetUpRoleRoutes(api, handlers.GetRoleHandler())
-
-	// Permission routes
 	permission.SetUpPermissionRoutes(api, handlers.GetPermissionHandler())
-
-	// Tenant routes
+	permissionmodule.SetUpPermissionModuleRoutes(api, handlers.GetPermissionModuleHandler())
 	tenant.SetUpTenantRoutes(api, handlers.GetTenantHandler())
+	rolepermissionmodule.SetUpRolePermissionModuleRoutes(api, handlers.GetRolePermissionModuleHandler())
+
 }

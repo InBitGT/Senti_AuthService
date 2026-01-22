@@ -5,13 +5,10 @@ import "gorm.io/gorm"
 type PermissionRepository interface {
 	Create(p *Permission) error
 	Update(id uint, p *Permission) (*Permission, error)
-	Delete(id uint) error
+	Delete(id uint) error     // soft delete
+	HardDelete(id uint) error // físico
 	GetByID(id uint) (*Permission, error)
 	GetAll() ([]Permission, error)
-
-	Assign(rolePermission *RolePermission) error
-	RemoveAssignment(id uint) error
-	GetPermissionsByRole(roleID uint) ([]Permission, error)
 }
 
 type permissionRepository struct {
@@ -28,48 +25,52 @@ func (r *permissionRepository) Create(p *Permission) error {
 
 func (r *permissionRepository) Update(id uint, p *Permission) (*Permission, error) {
 	var existing Permission
-	if err := r.db.First(&existing, id).Error; err != nil {
+	if err := r.db.Where("id_permission = ? AND status = true", id).First(&existing).Error; err != nil {
 		return nil, err
 	}
 
-	existing.Key = p.Key
-	existing.Desc = p.Desc
+	updates := map[string]interface{}{
+		"key":         p.Key,
+		"description": p.Desc,
+	}
 
-	return &existing, r.db.Save(&existing).Error
+	if err := r.db.Model(&Permission{}).
+		Where("id_permission = ?", id).
+		Updates(updates).Error; err != nil {
+		return nil, err
+	}
+
+	return r.GetByID(id)
 }
 
 func (r *permissionRepository) Delete(id uint) error {
-	return r.db.Delete(&Permission{}, id).Error
+	res := r.db.Model(&Permission{}).
+		Where("id_permission = ? AND status = true", id).
+		Updates(map[string]interface{}{"status": false})
+
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (r *permissionRepository) HardDelete(id uint) error {
+	return r.db.Unscoped().
+		Where("id_permission = ?", id).
+		Delete(&Permission{}).Error
 }
 
 func (r *permissionRepository) GetByID(id uint) (*Permission, error) {
-	var out Permission
-	err := r.db.First(&out, id).Error
-	return &out, err
+	var p Permission
+	err := r.db.Where("id_permission = ? AND status = true", id).First(&p).Error
+	return &p, err
 }
 
 func (r *permissionRepository) GetAll() ([]Permission, error) {
 	var list []Permission
-	err := r.db.Find(&list).Error
-	return list, err
-}
-
-func (r *permissionRepository) Assign(rp *RolePermission) error {
-	return r.db.Create(rp).Error
-}
-
-func (r *permissionRepository) RemoveAssignment(id uint) error {
-	return r.db.Delete(&RolePermission{}, id).Error
-}
-
-func (r *permissionRepository) GetPermissionsByRole(roleID uint) ([]Permission, error) {
-	var list []Permission
-	err := r.db.Raw(`
-		SELECT p.* 
-		FROM permissions p
-		INNER JOIN role_permissions rp ON rp.id_permission = p.id_permission
-		WHERE rp.id_role = ?
-	`, roleID).Scan(&list).Error
-
+	err := r.db.Where("status = true").Find(&list).Error
 	return list, err
 }

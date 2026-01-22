@@ -42,6 +42,11 @@ type authRepository struct {
 	db *gorm.DB
 }
 
+type ModulePermissionRow struct {
+	ModuleID      uint   `gorm:"column:module_id"`
+	PermissionKey string `gorm:"column:permission_key"`
+}
+
 func NewAuthRepository(db *gorm.DB) AuthRepository {
 	return &authRepository{db}
 }

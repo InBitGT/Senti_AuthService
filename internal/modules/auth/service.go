@@ -39,10 +39,11 @@ func NewAuthService(repo AuthRepository) AuthService {
 }
 
 type AuthClaims struct {
-	UserID      uint     `json:"sub"`
-	TenantID    uint     `json:"tenant"`
-	Role        string   `json:"role"`
-	Permissions []string `json:"permissions"`
+	UserID      uint                `json:"sub"`
+	TenantID    uint                `json:"tenant"`
+	Role        string              `json:"role"`
+	Permissions []string            `json:"permissions,omitempty"` // opcional (compat)
+	Modules     map[string][]string `json:"modules,omitempty"`     // ✅ nuevo
 	jwt.RegisteredClaims
 }
 

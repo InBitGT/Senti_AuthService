@@ -47,13 +47,15 @@ func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCom
 
 	// -------- 2) TENANT --------
 	t := &tenant.Tenant{
-		Code:      req.Tenant.Code,
-		Name:      req.Tenant.Name,
-		NIT:       req.Tenant.NIT,
-		Phone:     req.Tenant.Phone,
-		Email:     req.Tenant.Email,
+		Code:    req.Tenant.Code,
+		Name:    req.Tenant.Name,
+		Picture: "", // opcional por ahora
+		NIT:     req.Tenant.NIT,
+		Phone:   req.Tenant.Phone,
+		Email:   req.Tenant.Email,
+		// SuscriptionID: 0, // opcional por ahora
 		AddressID: addressID,
-		IsActive:  true,
+		Status:    true,
 	}
 
 	log.Println("[REGISTER_COMPANY] creando tenant")
@@ -71,9 +73,9 @@ func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCom
 	log.Println("[REGISTER_COMPANY] creando rol ADMIN")
 
 	adminRole := &role.Role{
-		TenantID: tenantID,
-		Name:     role.AdminName,
-		Desc:     "Administrador del tenant",
+		Name:   role.AdminName,
+		Desc:   "Administrador del tenant",
+		Status: true,
 	}
 
 	if err := s.repo.CreateRole(adminRole); err != nil {
@@ -88,9 +90,9 @@ func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCom
 	log.Println("[REGISTER_COMPANY] creando rol USER")
 
 	userRole := &role.Role{
-		TenantID: tenantID,
-		Name:     role.UserName,
-		Desc:     "Usuario estándar",
+		Name:   role.UserName,
+		Desc:   "Usuario estándar",
+		Status: true,
 	}
 
 	if err := s.repo.CreateRole(userRole); err != nil {
