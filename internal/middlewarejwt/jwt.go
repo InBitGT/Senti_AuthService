@@ -14,17 +14,18 @@ import (
 type contextKey string
 
 const (
-	ContextUserIDKey   contextKey = "user_id"
-	ContextTenantIDKey contextKey = "tenant_id"
-	ContextRoleKey     contextKey = "role"
-	ContextPermsKey    contextKey = "permissions"
+	ContextUserIDKey      contextKey = "user_id"
+	ContextTenantIDKey    contextKey = "tenant_id"
+	ContextRoleIDKey      contextKey = "role_id"
+	ContextModulePermsKey contextKey = "module_permissions"
 )
 
+// ✅ Claims NUEVOS (por módulo)
 type AuthClaims struct {
-	UserID      uint     `json:"sub"`
-	TenantID    uint     `json:"tenant"`
-	Role        string   `json:"role"`
-	Permissions []string `json:"permissions"`
+	UserID            uint              `json:"sub"`
+	TenantID          uint              `json:"tenant"`
+	RoleID            uint              `json:"role_id"`
+	ModulePermissions map[uint][]string `json:"module_permissions"`
 	jwt.RegisteredClaims
 }
 
@@ -48,10 +49,14 @@ func JWTMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		if claims.ModulePermissions == nil {
+			claims.ModulePermissions = map[uint][]string{}
+		}
+
 		ctx := context.WithValue(r.Context(), ContextUserIDKey, claims.UserID)
 		ctx = context.WithValue(ctx, ContextTenantIDKey, claims.TenantID)
-		ctx = context.WithValue(ctx, ContextRoleKey, claims.Role)
-		ctx = context.WithValue(ctx, ContextPermsKey, claims.Permissions)
+		ctx = context.WithValue(ctx, ContextRoleIDKey, claims.RoleID)
+		ctx = context.WithValue(ctx, ContextModulePermsKey, claims.ModulePermissions)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
