@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"AuthService/internal/config"
+	"AuthService/internal/middlewarejwt"
 	"AuthService/internal/modules/otp"
 	"AuthService/internal/modules/refreshtoken"
 	"AuthService/internal/modules/user"
@@ -38,21 +39,16 @@ func NewAuthService(repo AuthRepository) AuthService {
 	return &authService{repo}
 }
 
-type AuthClaims struct {
-	UserID      uint     `json:"sub"`
-	TenantID    uint     `json:"tenant"`
-	Role        string   `json:"role"`
-	Permissions []string `json:"permissions"`
-	jwt.RegisteredClaims
-}
-
+// ------------------------- REGISTER -------------------------
 func (s *authService) Register(req *RegisterRequest) (*user.User, error) {
 	tenantObj, err := s.repo.GetActiveTenantByCode(req.TenantCode)
 	if err != nil {
 		return nil, err
 	}
 
-	roleObj, err := s.repo.GetRoleByName(tenantObj.ID, req.RoleName)
+	// ✅ Si tu role es global (sin tenant_id): GetRoleByName(name)
+	// Si tu role es por tenant, deja (tenantID, name).
+	roleObj, err := s.repo.GetRoleByName(req.RoleName)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +63,7 @@ func (s *authService) Register(req *RegisterRequest) (*user.User, error) {
 		Email:        req.Email,
 		PasswordHash: string(hash),
 		RoleID:       roleObj.ID,
-		IsActive:     true,
+		IsActive:     true, // (cuando migres user -> status bool, lo cambiamos)
 	}
 
 	if err := s.repo.CreateUser(u); err != nil {
@@ -77,6 +73,7 @@ func (s *authService) Register(req *RegisterRequest) (*user.User, error) {
 	return u, nil
 }
 
+// ------------------------- LOGIN -------------------------
 func (s *authService) Login(req *LoginRequest) (*AuthResponse, error) {
 	tenantObj, err := s.repo.GetActiveTenantByCode(req.TenantCode)
 	if err != nil {
@@ -104,17 +101,13 @@ func (s *authService) Login(req *LoginRequest) (*AuthResponse, error) {
 		_ = s.repo.MarkOTPUsed(otpObj.ID)
 	}
 
-	perms, err := s.repo.GetPermissionsByRole(u.RoleID)
+	// ✅ RBAC nuevo: permisos por módulo
+	modulePerms, err := s.repo.GetModulePermissionsByRole(u.RoleID)
 	if err != nil {
 		return nil, err
 	}
 
-	permKeys := make([]string, len(perms))
-	for i, p := range perms {
-		permKeys[i] = p.Key
-	}
-
-	accessToken, refreshTokenStr, err := s.generateTokens(u, permKeys)
+	accessToken, refreshTokenStr, err := s.generateTokens(u, modulePerms)
 	if err != nil {
 		return nil, err
 	}
@@ -126,13 +119,18 @@ func (s *authService) Login(req *LoginRequest) (*AuthResponse, error) {
 	}, nil
 }
 
-func (s *authService) generateTokens(u *user.User, perms []string) (string, string, error) {
+func (s *authService) generateTokens(u *user.User, modulePerms map[uint][]string) (string, string, error) {
 	now := time.Now()
 
-	claims := AuthClaims{
-		UserID:      u.ID,
-		TenantID:    u.TenantID,
-		Permissions: perms,
+	if modulePerms == nil {
+		modulePerms = map[uint][]string{}
+	}
+
+	claims := middlewarejwt.AuthClaims{
+		UserID:            u.ID,
+		TenantID:          u.TenantID,
+		RoleID:            u.RoleID,
+		ModulePermissions: modulePerms,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(config.JwtExpiry)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -158,6 +156,7 @@ func (s *authService) generateTokens(u *user.User, perms []string) (string, stri
 	return accessToken, rt.Token, nil
 }
 
+// ------------------------- REFRESH -------------------------
 func (s *authService) Refresh(token string) (*AuthResponse, error) {
 	rt, err := s.repo.GetRefreshToken(token)
 	if err != nil || rt.Revoked || rt.ExpiresAt.Before(time.Now()) {
@@ -169,17 +168,12 @@ func (s *authService) Refresh(token string) (*AuthResponse, error) {
 		return nil, ErrInvalidCredentials
 	}
 
-	perms, err := s.repo.GetPermissionsByRole(u.RoleID)
+	modulePerms, err := s.repo.GetModulePermissionsByRole(u.RoleID)
 	if err != nil {
 		return nil, err
 	}
 
-	permKeys := make([]string, len(perms))
-	for i, p := range perms {
-		permKeys[i] = p.Key
-	}
-
-	accessToken, newRefresh, err := s.generateTokens(u, permKeys)
+	accessToken, newRefresh, err := s.generateTokens(u, modulePerms)
 	if err != nil {
 		return nil, err
 	}

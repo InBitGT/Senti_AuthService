@@ -1,4 +1,4 @@
-package middleware
+package middlewarejwt
 
 import (
 	"net/http"
@@ -6,17 +6,20 @@ import (
 	"AuthService/internal/common"
 )
 
-func RequirePermission(permission string) func(http.Handler) http.Handler {
+// ✅ valida "perm" dentro de un moduleID específico
+func RequireModulePermission(moduleID uint, perm string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			perms, ok := r.Context().Value(ContextPermsKey).([]string)
-			if !ok {
+
+			mp, ok := r.Context().Value(ContextModulePermsKey).(map[uint][]string)
+			if !ok || mp == nil {
 				common.ErrorResponse(w, http.StatusForbidden, common.HTTP_FORBIDDEN, common.ERR_FORBIDDEN, nil)
 				return
 			}
 
+			perms := mp[moduleID]
 			for _, p := range perms {
-				if p == permission {
+				if p == perm {
 					next.ServeHTTP(w, r)
 					return
 				}

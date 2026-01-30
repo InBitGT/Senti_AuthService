@@ -1,4 +1,4 @@
-package middleware
+package middlewarejwt
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 
 	"AuthService/internal/common"
 	"AuthService/internal/config"
-	"AuthService/internal/modules/auth"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -15,11 +14,20 @@ import (
 type contextKey string
 
 const (
-	ContextUserIDKey   contextKey = "user_id"
-	ContextTenantIDKey contextKey = "tenant_id"
-	ContextRoleKey     contextKey = "role"
-	ContextPermsKey    contextKey = "permissions"
+	ContextUserIDKey      contextKey = "user_id"
+	ContextTenantIDKey    contextKey = "tenant_id"
+	ContextRoleIDKey      contextKey = "role_id"
+	ContextModulePermsKey contextKey = "module_permissions"
 )
+
+// ✅ Claims NUEVOS (por módulo)
+type AuthClaims struct {
+	UserID            uint              `json:"sub"`
+	TenantID          uint              `json:"tenant"`
+	RoleID            uint              `json:"role_id"`
+	ModulePermissions map[uint][]string `json:"module_permissions"`
+	jwt.RegisteredClaims
+}
 
 func JWTMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +39,7 @@ func JWTMiddleware(next http.Handler) http.Handler {
 
 		tokenString := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
 
-		claims := &auth.AuthClaims{}
+		claims := &AuthClaims{}
 		token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
 			return config.JwtSecret, nil
 		})
@@ -41,10 +49,14 @@ func JWTMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		if claims.ModulePermissions == nil {
+			claims.ModulePermissions = map[uint][]string{}
+		}
+
 		ctx := context.WithValue(r.Context(), ContextUserIDKey, claims.UserID)
 		ctx = context.WithValue(ctx, ContextTenantIDKey, claims.TenantID)
-		ctx = context.WithValue(ctx, ContextRoleKey, claims.Role)
-		ctx = context.WithValue(ctx, ContextPermsKey, claims.Permissions)
+		ctx = context.WithValue(ctx, ContextRoleIDKey, claims.RoleID)
+		ctx = context.WithValue(ctx, ContextModulePermsKey, claims.ModulePermissions)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

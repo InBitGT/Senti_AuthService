@@ -81,3 +81,14 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	common.SuccessResponse(w, common.SUCCESS_DELETED, nil, common.HTTP_OK)
 }
+
+func (h *TenantHandler) HardDeleteInternal(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.Atoi(mux.Vars(r)["id"])
+
+	if err := h.svc.HardDelete(uint(id)); err != nil {
+		common.ErrorResponse(w, http.StatusInternalServerError, common.ERR_INTERNAL_ERROR, err.Error(), nil)
+		return
+	}
+
+	common.SuccessResponse(w, common.SUCCESS_DELETED, "ok", common.HTTP_OK)
+}

@@ -3,7 +3,9 @@ package server
 import (
 	"AuthService/internal/modules/auth"
 	"AuthService/internal/modules/permission"
+	"AuthService/internal/modules/permissionmodule"
 	"AuthService/internal/modules/role"
+	"AuthService/internal/modules/rolepermissionmodule"
 	"AuthService/internal/modules/tenant"
 )
 
@@ -19,6 +21,14 @@ func (h *Handlers) GetPermissionHandler() *permission.PermissionHandler {
 	return h.Permission
 }
 
+func (h *Handlers) GetPermissionModuleHandler() *permissionmodule.Handler {
+	return h.PermissionModule
+}
+
 func (h *Handlers) GetTenantHandler() *tenant.TenantHandler {
 	return h.Tenant
+}
+
+func (h *Handlers) GetRolePermissionModuleHandler() *rolepermissionmodule.Handler {
+	return h.RolePermissionModule
 }

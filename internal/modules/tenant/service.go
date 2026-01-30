@@ -4,6 +4,7 @@ type TenantService interface {
 	Create(req *Tenant) (*Tenant, error)
 	Update(id uint, req *Tenant) (*Tenant, error)
 	Delete(id uint) error
+	HardDelete(id uint) error
 	GetByID(id uint) (*Tenant, error)
 	GetByCode(code string) (*Tenant, error)
 	GetAll() ([]Tenant, error)
@@ -19,9 +20,15 @@ func NewTenantService(repo TenantRepository) TenantService {
 
 func (s *tenantService) Create(req *Tenant) (*Tenant, error) {
 	t := &Tenant{
-		Code:     req.Code,
-		Name:     req.Name,
-		IsActive: true,
+		Code:          req.Code,
+		Name:          req.Name,
+		Picture:       req.Picture,
+		NIT:           req.NIT,
+		Phone:         req.Phone,
+		Email:         req.Email,
+		SuscriptionID: req.SuscriptionID,
+		AddressID:     req.AddressID,
+		Status:        true,
 	}
 	return t, s.repo.Create(t)
 }
@@ -32,6 +39,10 @@ func (s *tenantService) Update(id uint, req *Tenant) (*Tenant, error) {
 
 func (s *tenantService) Delete(id uint) error {
 	return s.repo.Delete(id)
+}
+
+func (s *tenantService) HardDelete(id uint) error {
+	return s.repo.HardDelete(id)
 }
 
 func (s *tenantService) GetByID(id uint) (*Tenant, error) {

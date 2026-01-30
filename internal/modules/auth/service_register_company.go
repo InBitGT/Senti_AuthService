@@ -2,24 +2,46 @@ package auth
 
 import (
 	"errors"
+	"log"
+	"time"
 
 	"AuthService/internal/clients"
 	"AuthService/internal/modules/role"
 	"AuthService/internal/modules/tenant"
+
+	"gorm.io/gorm"
 )
 
 var ErrRegisterCompany = errors.New("no se pudo registrar la empresa")
 
 func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCompanyResponse, error) {
-	senti := clients.NewSentiClient()
+	log.Println("[REGISTER_COMPANY] start")
+
+	customer := clients.NewCustomerClient()
+	payment := clients.NewPaymentClient()
 	userc := clients.NewUserClient()
 
-	if req.Tenant.Code == "" || req.Tenant.Name == "" || req.AdminUser.Email == "" || req.AdminUser.Password == "" {
+	// -------- VALIDACIONES --------
+	if req.Tenant.Code == "" || req.Tenant.Name == "" {
 		return nil, ErrRegisterCompany
 	}
+	if req.AdminUser.Email == "" || req.AdminUser.Password == "" {
+		return nil, ErrRegisterCompany
+	}
+	if req.Subscription.PlanID == 0 {
+		return nil, errors.New("plan_id es requerido")
+	}
 
-	// 1) Crear una sola address (compartida)
-	addressID, err := senti.CreateAddress(clients.CreateAddressReq{
+	// 0) Guard: evitar duplicado (idempotencia básica)
+	if _, err := s.repo.GetActiveTenantByCode(req.Tenant.Code); err == nil {
+		return nil, errors.New("tenant ya existe")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	// -------- 1) ADDRESS --------
+	log.Println("[REGISTER_COMPANY] creating address")
+	addressID, err := customer.CreateAddress(clients.CreateAddressReq{
 		Line1:      req.Address.Line1,
 		Line2:      req.Address.Line2,
 		City:       req.Address.City,
@@ -28,58 +50,127 @@ func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCom
 		PostalCode: req.Address.PostalCode,
 	})
 	if err != nil {
+		log.Printf("[REGISTER_COMPANY] ERROR address: %v\n", err)
 		return nil, err
 	}
 
-	var tenantID uint
-	defer func() {
-		// Si algo falla después, esto evita basura.
-		// Se activa solo si devolvemos error y ya habíamos creado cosas.
-	}()
+	// -------- 2) TENANT --------
+	log.Println("[REGISTER_COMPANY] creating tenant")
 
-	// 2) Crear tenant en AuthService
 	t := &tenant.Tenant{
 		Code:      req.Tenant.Code,
 		Name:      req.Tenant.Name,
+		Picture:   req.Tenant.Picture,
 		NIT:       req.Tenant.NIT,
 		Phone:     req.Tenant.Phone,
 		Email:     req.Tenant.Email,
 		AddressID: addressID,
-		IsActive:  true,
+		Status:    true,
 	}
 
 	if err := s.repo.CreateTenant(t); err != nil {
-		_ = senti.DeleteAddress(addressID)
+		_ = customer.DeleteAddress(addressID)
 		return nil, err
 	}
-	tenantID = t.ID
 
-	// 3) Crear roles base del tenant
-	adminRole := &role.Role{
-		TenantID: tenantID,
-		Name:     role.AdminName,
-		Desc:     "Administrador del tenant",
+	tenantID := t.ID
+
+	// -------- 3) BRANCH GENERAL --------
+	branchName := req.Branch.Name
+	if branchName == "" {
+		branchName = "General"
 	}
 
-	if err := s.repo.CreateRole(adminRole); err != nil {
+	log.Println("[REGISTER_COMPANY] creating branch general")
+	branchID, err := customer.CreateBranch(clients.CreateBranchReq{
+		Name:        branchName,
+		Description: req.Branch.Description,
+		AddressID:   addressID,
+		TenantID:    tenantID,
+	})
+	if err != nil {
+		// compensación mínima
 		_ = s.repo.HardDeleteTenant(tenantID)
-		_ = senti.DeleteAddress(addressID)
+		_ = customer.DeleteAddress(addressID)
 		return nil, err
 	}
 
-	userRole := &role.Role{
-		TenantID: tenantID,
-		Name:     role.UserName,
-		Desc:     "Usuario estándar",
+	// -------- 4) SUSCRIPTION --------
+	now := time.Now()
+	startedAt := now
+	renewAt := now.Add(30 * 24 * time.Hour)
+
+	if req.Subscription.StartedAt != nil {
+		startedAt = *req.Subscription.StartedAt
+	}
+	if req.Subscription.RenewAt != nil {
+		renewAt = *req.Subscription.RenewAt
 	}
 
-	if err := s.repo.CreateRole(userRole); err != nil {
+	log.Println("[REGISTER_COMPANY] creating suscription")
+	suscriptionID, err := payment.CreateSuscription(clients.CreateSuscriptionReq{
+		TenantID:  tenantID,
+		PlanID:    req.Subscription.PlanID,
+		StartedAt: startedAt,
+		RenewAt:   renewAt,
+		EndAt:     req.Subscription.EndAt,
+	})
+	if err != nil {
 		_ = s.repo.HardDeleteTenant(tenantID)
-		_ = senti.DeleteAddress(addressID)
+		_ = customer.DeleteAddress(addressID)
 		return nil, err
 	}
 
-	// 4) Crear usuario admin en UserService (misma address)
+	// -------- 5) LINK TENANT -> SUSCRIPTION --------
+	log.Println("[REGISTER_COMPANY] linking tenant suscription_id")
+	if err := s.repo.UpdateTenantSuscription(tenantID, suscriptionID); err != nil {
+		_ = s.repo.HardDeleteTenant(tenantID)
+		_ = customer.DeleteAddress(addressID)
+		return nil, err
+	}
+
+	// -------- 6) ROLES (ADMIN/USER) --------
+	log.Println("[REGISTER_COMPANY] ensuring roles exist")
+
+	adminRole, err := s.repo.GetRoleByName(role.AdminName)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			adminRole = &role.Role{
+				Name:   role.AdminName,
+				Desc:   "Administrador",
+				Status: true,
+			}
+			if err := s.repo.CreateRole(adminRole); err != nil {
+				_ = s.repo.HardDeleteTenant(tenantID)
+				_ = customer.DeleteAddress(addressID)
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+
+	usrRole, err := s.repo.GetRoleByName(role.UserName)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			usrRole = &role.Role{
+				Name:   role.UserName,
+				Desc:   "Usuario",
+				Status: true,
+			}
+			if err := s.repo.CreateRole(usrRole); err != nil {
+				_ = s.repo.HardDeleteTenant(tenantID)
+				_ = customer.DeleteAddress(addressID)
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+
+	// -------- 7) USER ADMIN (solo después de suscripción) --------
+	log.Println("[REGISTER_COMPANY] creating admin user in UserService")
+
 	userID, err := userc.CreateAdmin(clients.CreateAdminReq{
 		TenantID:  tenantID,
 		AddressID: addressID,
@@ -92,13 +183,29 @@ func (s *authService) RegisterCompany(req *RegisterCompanyRequest) (*RegisterCom
 	})
 	if err != nil {
 		_ = s.repo.HardDeleteTenant(tenantID)
-		_ = senti.DeleteAddress(addressID)
+		_ = customer.DeleteAddress(addressID)
 		return nil, err
 	}
 
+	// -------- 8) USER_BRANCH (asignar admin al branch general) --------
+	log.Println("[REGISTER_COMPANY] creating user_branch assignment")
+	_, err = customer.CreateUserBranch(clients.CreateUserBranchReq{
+		UserID:   userID,
+		BranchID: branchID,
+	})
+	if err != nil {
+		_ = s.repo.HardDeleteTenant(tenantID)
+		_ = customer.DeleteAddress(addressID)
+		return nil, err
+	}
+
+	log.Println("[REGISTER_COMPANY] SUCCESS")
+
 	return &RegisterCompanyResponse{
-		TenantID:  tenantID,
-		AddressID: addressID,
-		UserID:    userID,
+		TenantID:      tenantID,
+		AddressID:     addressID,
+		BranchID:      branchID,
+		SuscriptionID: suscriptionID,
+		UserID:        userID,
 	}, nil
 }

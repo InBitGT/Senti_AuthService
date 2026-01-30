@@ -1,4 +1,4 @@
-package tenant
+package permissionmodule
 
 import (
 	"AuthService/internal/middleware"
@@ -6,18 +6,17 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func SetUpTenantRoutes(api *mux.Router, h *TenantHandler) {
-	r := api.PathPrefix("/tenants").Subrouter()
+func SetUpPermissionModuleRoutes(api *mux.Router, h *Handler) {
+	r := api.PathPrefix("/permission-modules").Subrouter()
 
-	// Interno (hard delete) - protegido por X-Internal-Key
+	// interno hard delete
 	internal := r.PathPrefix("/internal").Subrouter()
 	internal.Use(middleware.InternalKeyMiddleware)
 	internal.HandleFunc("/{id}", h.HardDeleteInternal).Methods("DELETE")
 
-	// Público (soft delete)
+	// público
 	r.HandleFunc("", h.Create).Methods("POST")
 	r.HandleFunc("", h.GetAll).Methods("GET")
 	r.HandleFunc("/{id}", h.GetByID).Methods("GET")
-	r.HandleFunc("/{id}", h.Update).Methods("PUT")
-	r.HandleFunc("/{id}", h.Delete).Methods("DELETE") // status=false
+	r.HandleFunc("/{id}", h.Delete).Methods("DELETE")
 }
